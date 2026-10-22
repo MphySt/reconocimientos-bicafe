@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Resultados BICAFE</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bree+Serif&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800&display=swap">
+<link rel="stylesheet" href="estilo.css">
+<style>.wrap{max-width:720px}
+.tabs button{padding:10px 4px;font-size:14px}
+.winners-head{text-align:center;align-items:center}
+.winners-head h1{font-size:clamp(28px,7vw,40px)}
+.gwrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+.gcard{background:var(--surface);border-radius:20px;box-shadow:var(--shadow);padding:18px 14px 16px;display:flex;flex-direction:column;align-items:center;gap:10px;border-top:8px solid var(--c);
+  animation:gin .8s cubic-bezier(.3,1.5,.5,1) both;animation-delay:var(--d)}
+@keyframes gin{from{opacity:0;transform:translateY(30px) scale(.85)}to{opacity:1;transform:none}}
+.gpill{background:var(--c);color:#fff;font-weight:800;font-size:13px;border-radius:99px;padding:5px 12px;text-align:center}
+.gcard[style*="yellow"] .gpill{color:#1C1C1C}
+.gpeople{display:flex;gap:10px;justify-content:center;width:100%}
+.gp{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;flex:1;max-width:190px}
+.gp img{width:100%;aspect-ratio:448/571;object-fit:contain;background:#fff;border-radius:14px;border:5px solid var(--c)}
+.gp .wname{font-size:22px}
+.gsub{font-size:12.5px;color:var(--ink-soft)}
+@media (prefers-reduced-motion: reduce){.gcard{animation:none}}
+</style>
+</head>
+<body>
+<canvas id="fx" aria-hidden="true"></canvas>
+<div class="wrap">
+  <header class="top">
+    <div class="logo"><img src="logo.png" alt="BICAFE"></div>
+    <div class="beans" id="beans"></div>
+  </header>
+  <div class="tri" aria-hidden="true"><span></span><span></span><span></span></div>
+  <nav class="tabs" id="tabs" hidden aria-label="Secciones">
+    <button data-m="results" aria-pressed="true">Categorías</button><button data-m="winners">Ganadores</button><button data-m="table">Todos</button><button data-m="qr">QR</button>
+  </nav>
+  <main id="app"></main>
+  <p class="foot">Resultados de los Reconocimientos BICAFE</p>
+</div>
+<script src="config.js"></script>
+<script src="comun.js"></script>
+<script>
+const app=document.getElementById('app'),tabs=document.getElementById('tabs');
+document.getElementById('beans').innerHTML=[0,1,2].map(beanSVG).join('');
+document.querySelectorAll('#beans .bean').forEach(b=>b.classList.add('on'));
+const st={key:lsGet('bicafe_clave')||'',mode:'results',votes:null,loading:false,err:'',updated:null,cat:0,revealed:{},confirmDel:false,deleting:false};
+tabs.onclick=e=>{const b=e.target.closest('button[data-m]');if(!b)return;st.mode=b.dataset.m;render();scrollTo({top:0})};
+
+async function load(silent){
+  if(!st.key)return render();
+  if(!silent){st.loading=true;render()}
+  try{
+    const r=await fetch(API_URL+'?k='+encodeURIComponent(st.key)).then(r=>r.json());
+    if(!r.ok){st.err=r.error==='clave'?'La clave no es correcta.':'No se pudieron leer los resultados.';st.votes=null;if(r.error==='clave'){st.key='';lsSet('bicafe_clave','')}}
+    else{st.err='';st.votes=r.votes;st.updated=new Date()}
+  }catch(e){st.err='No se pudo conectar. Revisa tu conexión e inténtalo de nuevo.'}
+  st.loading=false;
+  if(!silent||!document.getElementById('race'))render();
+}
+setInterval(()=>{if(st.votes&&!document.hidden)load(true)},30000);
+
+function render(){
+  tabs.hidden=!st.votes;
+  [...tabs.querySelectorAll('button')].forEach(b=>b.setAttribute('aria-pressed',b.dataset.m===st.mode));
+  if(!st.votes) return keyView();
+  if(st.mode==='qr') return qrView();
+  if(st.mode==='winners') return winnersView();
+  if(st.mode==='table') return tableView();
+  results();
+}
+function keyView(){
+  setQ('red');
+  app.innerHTML=`<section class="screen"><div class="card">
+    <div class="stripe" style="display:flex;height:8px;border-radius:99px;overflow:hidden"><span></span><span></span><span></span></div>
+    <h2>Resultados de la votación</h2>
+    <p class="ask">Escribe la clave de resultados para ver las estadísticas.</p>
+    <form class="keyform" id="kf"><input id="k" type="password" placeholder="Clave de resultados" autocomplete="current-password" value=""><button class="btn main" style="flex:0 0 auto">${st.loading?'Cargando…':'Ver resultados'}</button></form>
+    ${st.err?`<p class="status warn">${esc(st.err)}</p>`:''}
+  </div></section>`;
+  document.getElementById('kf').onsubmit=e=>{e.preventDefault();st.key=document.getElementById('k').value.trim();lsSet('bicafe_clave',st.key);load()};
+}
+const tally=key=>{
+  const i={puntualidad:0,servicio:1,alegria:2}[key],m={};
+  for(const v of st.votes){if(byId[v[i]])m[v[i]]=(m[v[i]]||0)+1}
+  return Object.entries(m).map(([id,c])=>({p:byId[id],c})).sort((a,b)=>b.c-a.c||a.p.n.localeCompare(b.p.n,'es'));
+};
+function header(){
+  const total=st.votes.length,sims=st.votes.filter(v=>v[3]).length;
+  return `<div class="card">
+    <div class="rhead"><div><div class="eyebrow">Resultados en vivo</div><h2>Personas que han votado</h2>
+      <div class="meta">Actualizado ${st.updated?st.updated.toLocaleTimeString('es-GT',{hour:'2-digit',minute:'2-digit'}):''} · se actualiza cada 30 s</div></div>
+      <div class="big">${total}</div></div>
+    ${sims?`<div class="simbar"><span>Incluye <b>${sims}</b> votos de prueba (simulación).</span>
+      ${st.confirmDel?`<span class="row"><button class="btn sm danger" id="delYes">${st.deleting?'Eliminando…':'Sí, eliminar'}</button><button class="btn sm ghost" id="delNo">Cancelar</button></span>`
+      :`<button class="btn sm ghost" id="del">Eliminar votos de prueba</button>`}</div>`:''}
+    <div class="row-actions"><button class="btn sm ghost" id="refresh">Actualizar ahora</button><button class="btn sm ghost" id="out">Salir</button></div>
+  </div>`;
+}
+function bindHeader(){
+  document.getElementById('refresh').onclick=()=>load();
+  document.getElementById('out').onclick=()=>{st.key='';st.votes=null;lsSet('bicafe_clave','');render()};
+  const d=document.getElementById('del');if(d)d.onclick=()=>{st.confirmDel=true;render()};
+  const n=document.getElementById('delNo');if(n)n.onclick=()=>{st.confirmDel=false;render()};
+  const y=document.getElementById('delYes');if(y)y.onclick=async()=>{if(st.deleting)return;st.deleting=true;render();
+    try{await api({action:'borrarPrueba',k:st.key})}catch(e){}
+    st.deleting=false;st.confirmDel=false;st.revealed={};load()};
+}
+function results(){
+  const q=QS[st.cat];setQ(q.color);
+  const rows=tally(q.key),top=rows.slice(0,6),max=top[0]?.c||1,shown=!!st.revealed[q.key];
+  app.innerHTML=`<section class="screen">${header()}
+    <div class="card qcard race-card">
+      <div class="chips">${QS.map((x,i)=>`<button class="chip ${i===st.cat?'on':''}" data-i="${i}" style="--c:var(--${x.color})">${x.title}</button>`).join('')}</div>
+      <div class="qtag"><span>Categoría ${st.cat+1} de 3</span><span class="pill">${q.pill}</span></div>
+      <h2>${q.title}</h2>
+      ${!rows.length?`<p class="ask">Aún no hay votos en esta categoría.</p>`:
+      `<div id="stage">${shown?finalHTML(q,rows,top,max):`<div class="curtain"><div class="drum">${[0,1,2].map(beanSVG).join('')}</div><p class="ask">${rows.length} personas recibieron votos en esta categoría.</p><button class="btn main" id="reveal">Revelar ganador</button></div>`}</div>`}
+      <div class="nav"><button class="btn ghost" id="prev" ${st.cat===0?'disabled':''}>Anterior</button><button class="btn main" id="nxt">${st.cat===2?'Ver ganadores':'Siguiente categoría'}</button></div>
+    </div></section>`;
+  bindHeader();
+  app.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{st.cat=+b.dataset.i;render()});
+  document.getElementById('prev').onclick=()=>{st.cat--;render()};
+  document.getElementById('nxt').onclick=()=>{if(st.cat<2){st.cat++;render()}else{st.mode='winners';render();scrollTo({top:0})}};
+  const rv=document.getElementById('reveal');if(rv)rv.onclick=()=>race(q,rows,top,max);
+}
+function rowHTML(r,i,max,val){return `<div class="rrow" data-id="${r.p.id}" style="top:${i*68}px">
+  <img src="${r.p.img}" alt=""><div class="rbody"><div class="rname">${esc(r.p.n)}</div>
+  <div class="track"><div class="fill" style="width:${(val/max)*100}%"></div></div></div><div class="rnum">${val}</div></div>`}
+function finalHTML(q,rows,top,max){
+  const w=top[0],tie=top.filter(r=>r.c===w.c),tot=rows.reduce((s,r)=>s+r.c,0);
+  return `<div class="winner">${tie.map(r=>`<div class="wcard"><div class="crown">${beanSVG(QS.indexOf(q))}</div><img src="${r.p.img}" alt=""><div class="wname">${esc(r.p.n)}</div><div class="wvotes">${r.c} votos · ${Math.round(r.c/tot*100)}%</div></div>`).join('')}</div>
+  ${tie.length>1?'<p class="ask" style="text-align:center">Empate en el primer lugar.</p>':''}
+  <div class="race" style="height:${top.length*68}px">${top.map((r,i)=>rowHTML(r,i,max,r.c)).join('')}</div>`;
+}
+function race(q,rows,top,max){
+  const stage=document.getElementById('stage');
+  stage.innerHTML=`<div class="race" id="race" style="height:${top.length*68}px">${top.map((r,i)=>rowHTML(r,i,max,0)).join('')}</div>`;
+  stage.scrollIntoView({behavior:reduce?'auto':'smooth',block:'center'});
+  if(reduce){st.revealed[q.key]=true;return render()}
+  const els=Object.fromEntries([...stage.querySelectorAll('.rrow')].map(e=>[e.dataset.id,e]));
+  const k=top.map(()=>0.6+Math.random()*1.4),D=4200,t0=performance.now();
+  function f(now){
+    const t=Math.min(1,(now-t0)/D);
+    const vals=top.map((r,i)=>{const e=1-Math.pow(1-Math.pow(t,k[i]),3);return t>=1?r.c:Math.round(r.c*e)});
+    const order=top.map((r,i)=>i).sort((a,b)=>vals[b]-vals[a]||top[a].c-top[b].c);
+    order.forEach((idx,rank)=>{const el=els[top[idx].p.id];el.style.top=rank*68+'px';
+      el.querySelector('.fill').style.width=(vals[idx]/max*100)+'%';el.querySelector('.rnum').textContent=vals[idx];el.classList.toggle('lead',rank===0)});
+    if(t<1)requestAnimationFrame(f);
+    else setTimeout(()=>{st.revealed[q.key]=true;render();
+      const wn=document.querySelector('.winner');if(wn)wn.scrollIntoView({block:'center'});
+      setTimeout(()=>{const w=document.querySelector('.wcard img');const r=w?w.getBoundingClientRect():{left:innerWidth/2,top:200,width:2,height:2};
+        burst(r,q.color,60,true);setTimeout(()=>burst(r,'yellow',40,true),220)},120)},500);
+  }
+  requestAnimationFrame(f);
+}
+function tableView(){
+  setQ('green');
+  app.innerHTML=`<section class="screen">${header()}${QS.map(q=>{
+    const rows=tally(q.key),tot=rows.reduce((s,r)=>s+r.c,0),max=rows[0]?.c||1;
+    return `<div class="card qcard" style="--q:var(--${q.color})">
+      <div class="qtag"><span>${tot} votos</span><span class="pill" style="color:${q.color==='yellow'?'#1C1C1C':'#fff'}">${q.pill}</span></div>
+      <h2>${q.title}</h2>
+      ${rows.length?`<div class="table-wrap"><table class="rank"><thead><tr><th>#</th><th>Colaborador</th><th style="width:30%"></th><th style="text-align:right">Votos</th><th style="text-align:right">%</th></tr></thead><tbody>
+      ${rows.map((r,i)=>{const pos=rows.findIndex(x=>x.c===r.c)+1;return `<tr class="${pos===1?'first':''}"><td>${pos}</td><td><div class="who"><img src="${r.p.img}" alt="" loading="lazy"><span>${esc(r.p.n)}</span></div></td>
+        <td><div class="mini" style="width:${r.c/max*100}%"></div></td><td class="num">${r.c}</td><td class="num">${Math.round(r.c/tot*100)}%</td></tr>`}).join('')}
+      </tbody></table></div>`:'<p class="ask">Aún no hay votos.</p>'}
+    </div>`}).join('')}</section>`;
+  bindHeader();
+}
+
+function winnersView(){
+  setQ('green');
+  const cards=QS.map((q,i)=>{
+    const rows=tally(q.key),tot=rows.reduce((s,r)=>s+r.c,0);
+    if(!rows.length)return `<div class="gcard" style="--c:var(--${q.color});--d:${i*0.9}s"><div class="gpill">${q.title}</div><p class="ask">Sin votos todavía.</p></div>`;
+    const tie=rows.filter(r=>r.c===rows[0].c);
+    return `<div class="gcard" style="--c:var(--${q.color});--d:${i*0.9}s">
+      <div class="gpill">${q.title}</div>
+      <div class="gpeople">${tie.map(r=>`<div class="gp"><div class="crown">${beanSVG(i)}</div><img src="${r.p.img}" alt=""><div class="wname">${esc(r.p.n)}</div></div>`).join('')}</div>
+      <div class="wvotes">${rows[0].c} votos · ${Math.round(rows[0].c/tot*100)}%${tie.length>1?' · empate':''}</div>
+      <div class="gsub">${q.pill}</div>
+    </div>`}).join('');
+  app.innerHTML=`<section class="screen">
+    <div class="card winners-head"><div class="stripe" style="display:flex;height:8px;border-radius:99px;overflow:hidden"><span></span><span></span><span></span></div>
+      <div class="eyebrow">Reconocimientos BICAFE</div><h1>¡Felicidades a los ganadores!</h1>
+      <p class="ask">Gracias a todos por participar y reconocer a sus compañeros.</p></div>
+    <div class="gwrap">${cards}</div>
+    <div class="nav"><button class="btn ghost" id="again">Repetir animación</button><button class="btn main" id="back">Ver categorías</button></div>
+  </section>`;
+  document.getElementById('again').onclick=()=>render();
+  document.getElementById('back').onclick=()=>{st.mode='results';st.cat=0;render();scrollTo({top:0})};
+  if(!reduce)QS.forEach((q,i)=>setTimeout(()=>{const el=app.querySelectorAll('.gcard')[i];if(!el)return;const r=el.querySelector('img')?.getBoundingClientRect()||el.getBoundingClientRect();burst(r,q.color,50,true)},i*900+500));
+}
+function qrView(){
+  setQ('red');
+  app.innerHTML=`<section class="screen"><div class="card qrcard">
+    <div class="stripe" style="display:flex;height:8px;border-radius:99px;overflow:hidden"><span></span><span></span><span></span></div>
+    <h2>Escanea y vota</h2>
+    <p class="ask">Proyecta esta pantalla o imprime el póster. Cada persona vota desde su teléfono, sin crear cuenta.</p>
+    <img class="qr" src="${QR_IMG}" alt="Código QR de la encuesta">
+    <div class="link"><code>${SITE_URL}#c=${CODE}</code><button class="btn sm ghost" id="cp">Copiar enlace</button></div>
+  </div></section>`;
+  document.getElementById('cp').onclick=async e=>{try{await navigator.clipboard.writeText(SITE_URL+'#c='+CODE);e.target.textContent='Enlace copiado'}catch(_){}};
+}
+(async()=>{
+  loadingScreen(app);
+  if(!(await gate())){tabs.hidden=true;return lockScreen(app)}
+  render();load();
+})();
+</script>
+</body>
+</html>

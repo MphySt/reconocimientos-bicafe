@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Reconocimientos BICAFE</title>
+<meta name="description" content="Vota por tus compañeros en los Reconocimientos BICAFE.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bree+Serif&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800&display=swap">
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+<canvas id="fx" aria-hidden="true"></canvas>
+<div class="wrap">
+  <header class="top">
+    <div class="logo"><img src="logo.png" alt="BICAFE"></div>
+    <div class="beans" id="beans" aria-label="Progreso"></div>
+  </header>
+  <div class="tri" aria-hidden="true"><span></span><span></span><span></span></div>
+  <main id="app"></main>
+  <p class="foot">Encuesta anónima de reconocimiento · BICAFE</p>
+</div>
+<script src="config.js"></script>
+<script src="comun.js"></script>
+<script>
+const VKEY='bicafe_voto_2026';
+let DEVICE=lsGet('bicafe_device');
+if(!DEVICE){DEVICE='d_'+Math.random().toString(36).slice(2)+Date.now().toString(36);lsSet('bicafe_device',DEVICE)}
+const state={step:-1,votes:{},voted:null,saving:false,err:''};
+try{const v=JSON.parse(lsGet(VKEY)||'null');if(v&&v.puntualidad)state.voted=v}catch(e){}
+const app=document.getElementById('app');
+const beans=document.getElementById('beans');
+beans.innerHTML=[0,1,2].map(beanSVG).join('');
+function paintBeans(){[...beans.children].forEach((b,i)=>{b.classList.toggle('on',!!(state.voted||state.votes)[QS[i].key]);b.classList.toggle('cur',!state.voted&&i===state.step)})}
+
+function render(){
+  paintBeans();
+  if(state.voted) return done(state.voted,true);
+  if(state.step===-1) return welcome();
+  if(state.step===3) return done(state.votes,false);
+  question(state.step);
+}
+function welcome(){
+  setQ('red');
+  const sample=[0,17,49,55,71].map(i=>PEOPLE[i]);
+  app.innerHTML=`<section class="screen"><div class="card hero">
+    <div class="stripe"><span></span><span></span><span></span></div>
+    <h1>Reconocimientos BICAFE</h1>
+    <p>Tres preguntas, un voto en cada una. Elige al compañero o compañera que mejor representa cada cualidad.</p>
+    <ul class="cats">
+      <li><span class="dot" style="background:var(--red)"></span>Puntualidad y compromiso</li>
+      <li><span class="dot" style="background:var(--yellow)"></span>Espíritu de servicio · Producción y Bodega</li>
+      <li><span class="dot" style="background:var(--green)"></span>Alegría y compañerismo · Administrativo</li>
+    </ul>
+    <div class="faces">${sample.map((p,i)=>`<img src="${p.img}" alt="" style="--c:var(--${['red','yellow','green'][i%3]})">`).join('')}</div>
+    <button class="btn main" id="go">Comenzar</button>
+    <p class="status ok">Tu voto es anónimo y solo puedes votar una vez.</p>
+  </div></section>`;
+  document.getElementById('go').onclick=()=>{state.step=0;render()};
+}
+function question(i){
+  const q=QS[i]; setQ(q.color);
+  const pool=ALL, sel=byId[state.votes[q.key]];
+  app.innerHTML=`<section class="screen"><div class="card qcard">
+    <div class="qtag"><span>Pregunta ${i+1} de 3</span><span class="pill">${q.pill}</span></div>
+    <h2>${q.title}</h2>
+    <p class="ask">${q.ask}</p>
+    <div class="area-note">Toca la lista para ver a todo el personal BICAFE (${pool.length} perfiles) o busca por nombre.</div>
+    <div class="combo" id="combo">
+      <button class="trigger" id="trig" aria-haspopup="listbox" aria-expanded="false">
+        ${sel?`<img src="${sel.img}" alt="">`:''}
+        <span class="ph ${sel?'has':''}">${sel?esc(sel.n):'Elige a un compañero o compañera'}</span>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div id="panelHost"></div>
+    </div>
+    <div id="chosenHost">${sel?chosenHTML(sel):''}</div>
+    ${state.err&&i===2?`<p class="status warn">${esc(state.err)}</p>`:''}
+    <div class="nav">
+      <button class="btn ghost" id="back">Atrás</button>
+      <button class="btn main" id="next" ${sel&&!state.saving?'':'disabled'}>${i===2?(state.saving?'Enviando…':'Enviar mis votos'):'Siguiente'}</button>
+    </div>
+  </div></section>`;
+  const combo=document.getElementById('combo'),trig=document.getElementById('trig'),host=document.getElementById('panelHost');
+  trig.onclick=()=>combo.classList.contains('open')?close():open();
+  function close(){combo.classList.remove('open');trig.setAttribute('aria-expanded','false');host.innerHTML=''}
+  function open(){
+    combo.classList.add('open');trig.setAttribute('aria-expanded','true');
+    host.innerHTML=`<div class="panel"><div class="search">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="srch" type="search" placeholder="Buscar por nombre…" autocomplete="off" aria-label="Buscar por nombre"><span class="count" id="cnt"></span></div>
+      <div class="list" id="list" role="listbox"></div></div>`;
+    const inp=document.getElementById('srch'),list=document.getElementById('list');
+    let act=0,items=[];
+    function draw(){
+      const t=norm(inp.value.trim());
+      items=pool.filter(p=>!t||norm(p.n).includes(t));
+      document.getElementById('cnt').textContent=items.length+' de '+pool.length;
+      if(!items.length){list.innerHTML=`<div class="empty">No hay nadie con “${esc(inp.value)}”.</div>`;return}
+      act=Math.min(act,items.length-1);
+      list.innerHTML=items.map((p,idx)=>`<div class="opt ${idx===act?'act':''}" role="option" data-id="${p.id}" aria-selected="${state.votes[q.key]===p.id}" aria-label="${esc(p.n)}" title="${esc(p.n)}">
+        <img src="${p.img}" alt="${esc(p.n)}" loading="lazy">${state.votes[q.key]===p.id?'<span class="ck">✓</span>':''}</div>`).join('');
+    }
+    draw(); setTimeout(()=>inp.focus({preventScroll:true}),30);
+    inp.oninput=()=>{act=0;draw()};
+    inp.onkeydown=e=>{
+      if(e.key==='ArrowDown'||e.key==='ArrowRight'){act=Math.min(act+1,items.length-1);draw();scrollAct();e.preventDefault()}
+      else if(e.key==='ArrowUp'||e.key==='ArrowLeft'){act=Math.max(act-1,0);draw();scrollAct();e.preventDefault()}
+      else if(e.key==='Enter'&&items[act]){pick(items[act].id)}
+      else if(e.key==='Escape'){close();trig.focus()}
+    };
+    function scrollAct(){list.querySelector('.opt.act')?.scrollIntoView({block:'nearest'})}
+    list.onclick=e=>{const o=e.target.closest('.opt');if(o)pick(o.dataset.id)};
+  }
+  function pick(id){
+    state.votes[q.key]=id; const p=byId[id];
+    close();
+    trig.innerHTML=`<img src="${p.img}" alt=""><span class="ph has">${esc(p.n)}</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>`;
+    document.getElementById('chosenHost').innerHTML=chosenHTML(p);
+    document.getElementById('next').disabled=false; paintBeans();
+    burst(trig.getBoundingClientRect(),q.color,14);
+  }
+  document.getElementById('back').onclick=()=>{state.step--;render()};
+  document.getElementById('next').onclick=()=>{ if(i<2){state.step++;render();window.scrollTo({top:0,behavior:'smooth'})} else submit() };
+}
+function chosenHTML(p){return `<div class="chosen"><img src="${p.img}" alt=""><div><div class="lbl">Tu voto</div><div class="who">${esc(p.n)}</div></div></div>`}
+async function submit(){
+  state.err='';state.saving=true;render();
+  const v={puntualidad:state.votes.puntualidad,servicio:state.votes.servicio,alegria:state.votes.alegria};
+  try{
+    const r=await api({action:'votar',device:DEVICE,...v});
+    if(!r.ok&&!r.already) throw new Error(r.error||'error');
+    lsSet(VKEY,JSON.stringify(v));
+    state.saving=false;
+    if(r.already){state.voted=v;render();return}
+    state.step=3;render();window.scrollTo({top:0,behavior:'smooth'});
+  }catch(e){
+    state.saving=false;
+    state.err='No se pudo guardar tu voto. Revisa tu conexión a internet e inténtalo de nuevo.';
+    render();
+  }
+}
+function done(v,already){
+  setQ('green');
+  const picks=QS.map(q=>({q,p:byId[v[q.key]]})).filter(x=>x.p);
+  app.innerHTML=`<section class="screen"><div class="card done">
+    <div class="stripe" style="display:flex;height:8px;border-radius:99px;overflow:hidden;width:100%"><span></span><span></span><span></span></div>
+    <h1>${already?'Ya registraste tu voto':'¡Gracias por votar!'}</h1>
+    <div class="picks">${picks.map(({q,p})=>`<div class="pick" style="--c:var(--${q.color})"><img src="${p.img}" alt=""><span class="k">${q.title}</span></div>`).join('')}</div>
+    <p>Gracias por participar y reconocer las cualidades positivas de tus compañeros. Cada voto es una oportunidad para valorar a quienes hacen de BICAFE un mejor lugar para trabajar.</p>
+  </div></section>`;
+  if(!already){const r={left:innerWidth/2-1,top:innerHeight*.3,width:2,height:2};
+    ['red','yellow','green'].forEach((c,i)=>setTimeout(()=>burst(r,c,40,true),i*180));}
+}
+(async()=>{
+  loadingScreen(app);
+  if(!(await gate()))return lockScreen(app);
+  render();
+})();
+</script>
+</body>
+</html>
