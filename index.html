@@ -24,6 +24,7 @@
 </div>
 <script src="config.js"></script>
 <script src="comun.js"></script>
+<script src="publico.js"></script>
 <script>
 const VKEY='bicafe_voto_2026';
 let DEVICE=lsGet('bicafe_device');
@@ -57,7 +58,9 @@ function welcome(){
     <div class="faces">${sample.map((p,i)=>`<img src="${p.img}" alt="" style="--c:var(--${['red','yellow','green'][i%3]})">`).join('')}</div>
     <button class="btn main" id="go">Comenzar</button>
     <p class="status ok">Tu voto es anónimo y solo puedes votar una vez.</p>
+    ${qrBtnHTML()}
   </div></section>`;
+  bindQR();
   document.getElementById('go').onclick=()=>{state.step=0;render()};
 }
 function question(i){
@@ -150,7 +153,9 @@ function done(v,already){
     <h1>${already?'Ya registraste tu voto':'¡Gracias por votar!'}</h1>
     <div class="picks">${picks.map(({q,p})=>`<div class="pick" style="--c:var(--${q.color})"><img src="${p.img}" alt=""><span class="k">${q.title}</span></div>`).join('')}</div>
     <p>Gracias por participar y reconocer las cualidades positivas de tus compañeros. Cada voto es una oportunidad para valorar a quienes hacen de BICAFE un mejor lugar para trabajar.</p>
+    ${extrasHTML()}
   </div></section>`;
+  bindExtras();
   if(!already){const r={left:innerWidth/2-1,top:innerHeight*.3,width:2,height:2};
     ['red','yellow','green'].forEach((c,i)=>setTimeout(()=>burst(r,c,40,true),i*180));}
 }
