@@ -43,6 +43,7 @@
 </div>
 <script src="config.js"></script>
 <script src="comun.js"></script>
+<script src="publico.js"></script>
 <script>
 const app=document.getElementById('app'),tabs=document.getElementById('tabs');
 document.getElementById('beans').innerHTML=[0,1,2].map(beanSVG).join('');
@@ -56,7 +57,7 @@ async function load(silent){
   try{
     const r=await fetch(API_URL+'?k='+encodeURIComponent(st.key)).then(r=>r.json());
     if(!r.ok){st.err=r.error==='clave'?'La clave no es correcta.':'No se pudieron leer los resultados.';st.votes=null;if(r.error==='clave'){st.key='';lsSet('bicafe_clave','')}}
-    else{st.err='';st.votes=r.votes;st.updated=new Date()}
+    else{st.err='';st.votes=r.votes;st.publicado=!!r.publicado;st.updated=new Date()}
   }catch(e){st.err='No se pudo conectar. Revisa tu conexión e inténtalo de nuevo.'}
   st.loading=false;
   if(!silent||!document.getElementById('race'))render();
@@ -97,10 +98,12 @@ function header(){
     ${sims?`<div class="simbar"><span>Incluye <b>${sims}</b> votos de prueba (simulación).</span>
       ${st.confirmDel?`<span class="row"><button class="btn sm danger" id="delYes">${st.deleting?'Eliminando…':'Sí, eliminar'}</button><button class="btn sm ghost" id="delNo">Cancelar</button></span>`
       :`<button class="btn sm ghost" id="del">Eliminar votos de prueba</button>`}</div>`:''}
+    ${publishHTML()}
     <div class="row-actions"><button class="btn sm ghost" id="refresh">Actualizar ahora</button><button class="btn sm ghost" id="out">Salir</button></div>
   </div>`;
 }
 function bindHeader(){
+  bindPublish();
   document.getElementById('refresh').onclick=()=>load();
   document.getElementById('out').onclick=()=>{st.key='';st.votes=null;lsSet('bicafe_clave','');render()};
   const d=document.getElementById('del');if(d)d.onclick=()=>{st.confirmDel=true;render()};
@@ -188,10 +191,12 @@ function winnersView(){
     <div class="card winners-head"><div class="stripe" style="display:flex;height:8px;border-radius:99px;overflow:hidden"><span></span><span></span><span></span></div>
       <div class="eyebrow">Reconocimientos BICAFE</div><h1>¡Felicidades a los ganadores!</h1>
       <p class="ask">Gracias a todos por participar y reconocer a sus compañeros.</p></div>
+    <div class="card">${publishHTML()}</div>
     <div class="gwrap">${cards}</div>
     <div class="nav"><button class="btn ghost" id="again">Repetir animación</button><button class="btn main" id="back">Ver categorías</button></div>
   </section>`;
   document.getElementById('again').onclick=()=>render();
+  bindPublish();
   document.getElementById('back').onclick=()=>{st.mode='results';st.cat=0;render();scrollTo({top:0})};
   if(!reduce)QS.forEach((q,i)=>setTimeout(()=>{const el=app.querySelectorAll('.gcard')[i];if(!el)return;const r=el.querySelector('img')?.getBoundingClientRect()||el.getBoundingClientRect();burst(r,q.color,50,true)},i*900+500));
 }
